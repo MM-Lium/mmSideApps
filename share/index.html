@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>分帳小工具 — SplitEasy</title>
+  <meta name="description" content="輕鬆管理多人分帳，自動計算每人應付金額，一鍵透過 LINE 分享結算結果。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">💸</span>
+        <span class="logo-text">SplitEasy</span>
+      </div>
+      <div class="group-name-display" id="groupNameDisplay">新的群組</div>
+    </div>
+    <!-- Tab Navigation -->
+    <nav class="tab-nav" role="tablist" aria-label="主選單">
+      <button class="tab-btn active" id="tabMembers" role="tab" aria-selected="true" aria-controls="pageMembersPanel" data-tab="members">
+        <span class="tab-icon">👥</span>
+        <span class="tab-label">成員</span>
+      </button>
+      <button class="tab-btn" id="tabExpenses" role="tab" aria-selected="false" aria-controls="pageExpensesPanel" data-tab="expenses">
+        <span class="tab-icon">📋</span>
+        <span class="tab-label">款項</span>
+      </button>
+      <button class="tab-btn" id="tabSettle" role="tab" aria-selected="false" aria-controls="pageSettlePanel" data-tab="settle">
+        <span class="tab-icon">⚖️</span>
+        <span class="tab-label">結算</span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="app-main">
+
+    <!-- PAGE: MEMBERS -->
+    <section class="page active" id="pageMembersPanel" role="tabpanel" aria-labelledby="tabMembers">
+      <div class="page-content">
+        <!-- Group name input -->
+        <div class="section-card">
+          <h2 class="section-title">群組設定</h2>
+          <div class="input-group">
+            <label class="input-label" for="groupNameInput">群組名稱</label>
+            <input class="input-field" type="text" id="groupNameInput" placeholder="例：墾丁之旅 🏖️" maxlength="30" />
+          </div>
+        </div>
+
+        <!-- Member list -->
+        <div class="section-card">
+          <div class="section-header">
+            <h2 class="section-title">成員列表</h2>
+            <span class="member-count-badge" id="memberCountBadge">0 人</span>
+          </div>
+          <div class="member-list" id="memberList">
+            <!-- Members rendered by JS -->
+            <div class="empty-state" id="memberEmptyState">
+              <span class="empty-icon">🙋</span>
+              <p>還沒有成員，快來新增吧！</p>
+            </div>
+          </div>
+          <!-- Add member row -->
+          <div class="add-member-row">
+            <input class="input-field" type="text" id="newMemberName" placeholder="輸入成員名稱" maxlength="15" />
+            <button class="btn btn-primary btn-sm" id="addMemberBtn" aria-label="新增成員">
+              <span>＋ 新增</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE: EXPENSES -->
+    <section class="page" id="pageExpensesPanel" role="tabpanel" aria-labelledby="tabExpenses">
+      <div class="page-content">
+        <div class="section-card">
+          <div class="section-header">
+            <h2 class="section-title">所有款項</h2>
+            <span class="total-badge" id="totalAmountBadge">NT$0</span>
+          </div>
+          <div class="expense-list" id="expenseList">
+            <div class="empty-state" id="expenseEmptyState">
+              <span class="empty-icon">🧾</span>
+              <p>還沒有款項，點擊下方按鈕新增</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- FAB -->
+      <button class="fab" id="addExpenseBtn" aria-label="新增款項">
+        <span class="fab-icon">＋</span>
+      </button>
+    </section>
+
+    <!-- PAGE: SETTLE -->
+    <section class="page" id="pageSettlePanel" role="tabpanel" aria-labelledby="tabSettle">
+      <div class="page-content">
+        <!-- Summary cards -->
+        <div class="section-card">
+          <h2 class="section-title">個人帳務總覽</h2>
+          <div class="balance-list" id="balanceList">
+            <div class="empty-state" id="settleEmptyState">
+              <span class="empty-icon">💰</span>
+              <p>新增款項後即可查看結算結果</p>
+            </div>
+          </div>
+        </div>
+        <!-- Transfer suggestions -->
+        <div class="section-card" id="transferCard" style="display:none">
+          <h2 class="section-title">轉帳建議</h2>
+          <div class="transfer-list" id="transferList"></div>
+          <!-- LINE Share -->
+          <button class="btn btn-line btn-full" id="lineShareBtn" aria-label="透過 LINE 分享結算結果">
+            <span class="line-icon">
+              <svg width="22" height="22" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="44" height="44" rx="10" fill="#06C755"/><path d="M36 20.3C36 14.4 30.1 9.6 22.8 9.6 15.5 9.6 9.6 14.4 9.6 20.3c0 5.3 4.7 9.7 11 10.8.4.1 1 .3 1.2.7.2.3.1.9.1.9l-.2 1.2c-.1.4-.4 1.5 1.3.8 1.7-.7 9-5.3 12.3-9.1 2.3-2.4 3.7-5 3.7-5.3z" fill="white"/><path d="M19.6 23.6h-3.4c-.3 0-.5-.2-.5-.5v-5.4c0-.3.2-.5.5-.5s.5.2.5.5v4.9h2.9c.3 0 .5.2.5.5s-.2.5-.5.5zm2.9 0c-.3 0-.5-.2-.5-.5v-5.4c0-.3.2-.5.5-.5s.5.2.5.5v5.4c0 .3-.2.5-.5.5zm7.4 0c-.2 0-.3-.1-.4-.2l-2.9-3.9v3.6c0 .3-.2.5-.5.5s-.5-.2-.5-.5v-5.4c0-.3.2-.5.5-.5.2 0 .3.1.4.2l2.9 3.9v-3.6c0-.3.2-.5.5-.5s.5.2.5.5v5.4c0 .3-.2.5-.5.5z" fill="#06C755"/></svg>
+            </span>
+            透過 LINE 分享結算
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== MODAL: ADD/EDIT EXPENSE ===== -->
+  <div class="modal-overlay" id="expenseModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalTitle">新增款項</h3>
+        <button class="modal-close" id="closeModalBtn" aria-label="關閉">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Expense name -->
+        <div class="input-group">
+          <label class="input-label" for="expenseName">款項名稱</label>
+          <input class="input-field" type="text" id="expenseName" placeholder="例：晚餐 🍜" maxlength="30" />
+        </div>
+        <!-- Amount -->
+        <div class="input-group">
+          <label class="input-label" for="expenseAmount">金額（NT$）</label>
+          <input class="input-field" type="number" id="expenseAmount" placeholder="0" min="0" step="1" />
+        </div>
+        <!-- Date -->
+        <div class="input-group">
+          <label class="input-label" for="expenseDate">日期</label>
+          <input class="input-field" type="date" id="expenseDate" />
+        </div>
+        <!-- Payer -->
+        <div class="input-group">
+          <label class="input-label">付款人</label>
+          <div class="payer-selector" id="payerSelector">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+        <!-- Participants -->
+        <div class="input-group">
+          <div class="participants-header">
+            <label class="input-label">分攤成員</label>
+            <div class="toggle-row">
+              <button class="btn-text" id="selectAllParticipants">全選</button>
+              <span class="divider">｜</span>
+              <button class="btn-text" id="clearAllParticipants">全清</button>
+            </div>
+          </div>
+          <div class="participants-grid" id="participantsGrid">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="cancelModalBtn">取消</button>
+        <button class="btn btn-primary" id="saveExpenseBtn">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: MEMBER LINE ===== -->
+  <div class="modal-overlay" id="lineModal" role="dialog" aria-modal="true" aria-labelledby="lineModalTitle">
+    <div class="modal-box modal-box--sm">
+      <div class="modal-header">
+        <h3 class="modal-title" id="lineModalTitle">連結 LINE</h3>
+        <button class="modal-close" id="closeLineModalBtn" aria-label="關閉">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">輸入 LINE ID 以在結算時產生連結</p>
+        <div class="input-group">
+          <label class="input-label" for="lineIdInput">LINE ID</label>
+          <input class="input-field" type="text" id="lineIdInput" placeholder="例：line_id_123" />
+        </div>
+        <input type="hidden" id="lineModalMemberId" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="cancelLineModalBtn">取消</button>
+        <button class="btn btn-line" id="saveLineBtn">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
