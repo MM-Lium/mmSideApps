@@ -6,6 +6,8 @@ import type {
   InstitutionalResponse,
   ScreenerFilter,
   ScreenerResult,
+  DayTradeFilter,
+  DayTradeCandidate,
   BacktestRequest,
   BacktestResult,
 } from '../types';
@@ -54,6 +56,13 @@ export const runScreener = async (
   filters: ScreenerFilter
 ): Promise<ScreenerResult[]> => {
   const res = await api.post('/screener/run', filters);
+  return res.data;
+};
+
+export const runDayTradeScreener = async (
+  filters: DayTradeFilter
+): Promise<DayTradeCandidate[]> => {
+  const res = await api.post('/screener/day-trade', filters);
   return res.data;
 };
 

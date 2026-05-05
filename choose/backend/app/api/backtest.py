@@ -3,7 +3,7 @@
 """
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import BacktestRequest, BacktestResult
-from app.services.data_service import fetch_price_data, fetch_institutional_data
+from app.services.data_service import fetch_price_data_fast, fetch_institutional_data
 from app.services.backtester import Backtester
 import asyncio
 
@@ -14,7 +14,7 @@ router = APIRouter()
 async def run_backtest(request: BacktestRequest):
     """執行策略回測"""
     price_df, inst_df = await asyncio.gather(
-        fetch_price_data(request.stock_id, request.start_date, request.end_date),
+        fetch_price_data_fast(request.stock_id, request.start_date, request.end_date),
         fetch_institutional_data(request.stock_id, request.start_date, request.end_date),
     )
 
@@ -39,6 +39,8 @@ async def run_backtest(request: BacktestRequest):
         rsi_oversold=request.rsi_oversold,
         rsi_overbought=request.rsi_overbought,
         score_threshold=request.score_threshold,
+        gap_threshold=request.gap_threshold,
+        volume_ratio=request.volume_ratio,
     )
 
     return BacktestResult(

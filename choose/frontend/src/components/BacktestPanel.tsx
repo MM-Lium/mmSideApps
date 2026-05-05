@@ -11,13 +11,17 @@ import { Card, MetricRow, Loading, Empty, Badge } from './ui/Card';
 import { formatPercent, changeColor } from '../lib/utils';
 import StockSearch from './StockSearch';
 
-const STRATEGIES: { value: StrategyType; label: string; desc: string }[] = [
+const STRATEGIES: { value: StrategyType; label: string; desc: string; isDayTrade?: boolean }[] = [
   { value: 'combined', label: '綜合評分', desc: '技術面 + 籌碼面加權評分' },
   { value: 'ma_cross', label: '均線交叉', desc: '短期均線穿越長期均線' },
   { value: 'macd', label: 'MACD', desc: 'MACD 金叉死叉策略' },
   { value: 'rsi', label: 'RSI', desc: 'RSI 超買超賣策略' },
   { value: 'chip', label: '籌碼策略', desc: '三大法人買賣超策略' },
+  { value: 'day_trade_gap', label: '當沖：缺口逆勢', desc: '開盤跳空 → 逢低承接，收盤出場', isDayTrade: true },
+  { value: 'day_trade_momentum', label: '當沖：強勢追漲', desc: '開高量增 → 追漲，收盤出場', isDayTrade: true },
 ];
+
+const IS_DAY_TRADE = (s: StrategyType) => s.startsWith('day_trade');
 
 const DEFAULT_REQUEST: BacktestRequest = {
   stock_id: '2330',
@@ -30,6 +34,8 @@ const DEFAULT_REQUEST: BacktestRequest = {
   rsi_oversold: 30,
   rsi_overbought: 70,
   score_threshold: 60,
+  gap_threshold: 1.0,
+  volume_ratio: 1.5,
 };
 
 const BacktestPanel: React.FC = () => {
@@ -70,7 +76,10 @@ const BacktestPanel: React.FC = () => {
                         : 'bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    <div className="font-medium">{s.label}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{s.label}</span>
+                      {s.isDayTrade && <span className="text-[0.6rem] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400">當沖</span>}
+                    </div>
                     <div className="text-[0.65rem] opacity-70">{s.desc}</div>
                   </button>
                 ))}
@@ -132,6 +141,36 @@ const BacktestPanel: React.FC = () => {
                 <div>
                   <label className="block text-xs text-[var(--text-secondary)] mb-1">超買（賣出）</label>
                   <input type="number" className="w-full text-xs bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded px-2 py-1.5 text-[var(--text-primary)] outline-none" value={req.rsi_overbought} onChange={(e) => update('rsi_overbought', Number(e.target.value))} />
+                </div>
+              </div>
+            )}
+
+            {IS_DAY_TRADE(req.strategy) && (
+              <div className="space-y-2 p-2 rounded-lg bg-orange-500/5 border border-orange-500/20">
+                <p className="text-xs font-medium text-orange-400">當沖參數（交易稅 0.15%）</p>
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">開盤缺口觸發閾值 (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="w-full text-xs bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded px-2 py-1.5 text-[var(--text-primary)] outline-none focus:border-orange-400"
+                    value={req.gap_threshold ?? 1.0}
+                    onChange={(e) => update('gap_threshold', Number(e.target.value))}
+                  />
+                  <p className="text-[0.6rem] text-[var(--text-secondary)] mt-0.5">
+                    {req.strategy === 'day_trade_gap' ? '開盤下跌超過此值才觸發做多' : '開盤上漲超過此值才觸發追漲'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">成交量放大倍數</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="w-full text-xs bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded px-2 py-1.5 text-[var(--text-primary)] outline-none focus:border-orange-400"
+                    value={req.volume_ratio ?? 1.5}
+                    onChange={(e) => update('volume_ratio', Number(e.target.value))}
+                  />
+                  <p className="text-[0.6rem] text-[var(--text-secondary)] mt-0.5">相較 20 日均量的倍數（量能確認）</p>
                 </div>
               </div>
             )}
@@ -250,11 +289,19 @@ const BacktestPanel: React.FC = () => {
                         <tr key={i} className="border-b border-[var(--border-color)]/40 hover:bg-[var(--bg-secondary)]/50">
                           <td className="py-1.5 pr-2 text-[var(--text-secondary)]">{t.date}</td>
                           <td className="py-1.5 pr-2">
-                            <Badge variant={t.action === 'BUY' ? 'buy' : 'sell'}>
-                              {t.action === 'BUY' ? '買' : '賣'}
-                            </Badge>
+                            {t.action === 'DAY_TRADE' ? (
+                              <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">當沖</span>
+                            ) : (
+                              <Badge variant={t.action === 'BUY' ? 'buy' : 'sell'}>
+                                {t.action === 'BUY' ? '買' : '賣'}
+                              </Badge>
+                            )}
                           </td>
-                          <td className="py-1.5 pr-2 text-right font-medium">{t.price.toFixed(2)}</td>
+                          <td className="py-1.5 pr-2 text-right font-medium">
+                            {t.action === 'DAY_TRADE' && t.sell_price
+                              ? `${t.price.toFixed(0)}→${t.sell_price.toFixed(0)}`
+                              : t.price.toFixed(2)}
+                          </td>
                           <td className={`py-1.5 text-right font-medium ${changeColor(t.profit_loss)}`}>
                             {t.profit_loss != null ? formatPercent(t.profit_loss) : '-'}
                           </td>

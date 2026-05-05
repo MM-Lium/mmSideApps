@@ -48,8 +48,14 @@ class Backtester:
         rsi_oversold: float = 30,
         rsi_overbought: float = 70,
         score_threshold: float = 60,
+        gap_threshold: float = 1.0,
+        volume_ratio: float = 1.5,
     ) -> dict:
         """執行回測，返回績效報告"""
+        # 當沖策略走獨立流程
+        if strategy in ("day_trade_gap", "day_trade_momentum"):
+            return self._run_day_trade(strategy, gap_threshold, volume_ratio)
+
         for i in range(long_ma, len(self.df)):
             row = self.df.iloc[i]
             date = str(row["date"].date())
@@ -258,6 +264,94 @@ class Backtester:
             return "SELL"
         return "HOLD"
 
+    def _run_day_trade(self, strategy: str, gap_threshold: float, volume_ratio: float) -> dict:
+        """
+        當沖回測引擎
+        ─ 每筆交易：當日開盤買入，當日收盤賣出（不留倉）
+        ─ 交易稅減半：0.15%（台灣當沖優惠稅率）
+        ─ 資金每次投入 90%（留緩衝）
+        """
+        DAY_TRADE_TAX = 0.0015   # 當沖交易稅 0.15%
+        df = self.df
+        self.capital = self.initial_capital
+        self.trades = []
+        self.equity_curve = []
+
+        vol_ma = df["Volume"].rolling(window=20).mean()
+
+        for i in range(20, len(df)):
+            row = df.iloc[i]
+            prev = df.iloc[i - 1]
+
+            date = str(row["date"].date())
+            open_p = float(row.get("Open", 0) or 0)
+            close_p = float(row.get("Close", 0) or 0)
+            volume = float(row.get("Volume", 0) or 0)
+            prev_close = float(prev.get("Close", 0) or 0)
+            avg_vol = float(vol_ma.iloc[i] or 0)
+
+            if open_p <= 0 or close_p <= 0 or prev_close <= 0:
+                self.equity_curve.append({"date": date, "value": round(self.capital, 2)})
+                continue
+
+            gap_pct = (open_p - prev_close) / prev_close * 100
+            vol_surge = (volume > avg_vol * volume_ratio) if avg_vol > 0 else False
+
+            trade_signal = self._day_trade_signal(
+                strategy, row, prev, gap_pct, vol_surge, gap_threshold
+            )
+
+            if trade_signal:
+                # 開盤買入
+                invest = self.capital * 0.9
+                shares = int(invest / open_p / 1000) * 1000
+                if shares >= 1000:
+                    buy_amount = shares * open_p
+                    buy_comm = buy_amount * self.commission_rate
+                    sell_amount = shares * close_p
+                    sell_comm = sell_amount * self.commission_rate
+                    sell_tax = sell_amount * DAY_TRADE_TAX
+
+                    pnl = sell_amount - buy_amount - buy_comm - sell_comm - sell_tax
+                    pnl_pct = pnl / buy_amount * 100
+
+                    self.capital += pnl
+                    self.trades.append({
+                        "date": date,
+                        "action": "DAY_TRADE",
+                        "price": open_p,
+                        "shares": shares,
+                        "amount": buy_amount,
+                        "sell_price": close_p,
+                        "commission": round(buy_comm + sell_comm, 2),
+                        "tax": round(sell_tax, 2),
+                        "profit_loss": round(pnl_pct, 2),
+                    })
+
+            self.equity_curve.append({"date": date, "value": round(self.capital, 2)})
+
+        return self._compute_metrics()
+
+    def _day_trade_signal(
+        self, strategy: str, row, prev,
+        gap_pct: float, vol_surge: bool, gap_threshold: float
+    ) -> bool:
+        """
+        day_trade_gap：開盤缺口 < -threshold 且成交量放大 → 逢低做多（等待反彈收盤）
+        day_trade_momentum：開盤缺口 > +threshold 且成交量放大 → 強勢追漲
+        """
+        if strategy == "day_trade_gap":
+            # 開低，等收盤反彈
+            return gap_pct <= -gap_threshold and vol_surge
+        elif strategy == "day_trade_momentum":
+            # 開高強勢，追漲至收盤
+            ma5 = row.get("ma5")
+            close = row.get("Close")
+            # 需同時滿足：缺口向上 + 量能放大 + 站上 MA5
+            above_ma5 = (pd.notna(ma5) and close is not None and float(close) > float(ma5))
+            return gap_pct >= gap_threshold and vol_surge and above_ma5
+        return False
+
     def _compute_metrics(self) -> dict:
         """計算績效指標"""
         if not self.equity_curve:
@@ -284,12 +378,15 @@ class Backtester:
         else:
             sharpe = 0.0
 
-        # 交易統計
-        sell_trades = [t for t in self.trades if t["action"] == "SELL" and t.get("profit_loss") is not None]
-        profit_trades = [t for t in sell_trades if t["profit_loss"] > 0]
-        loss_trades = [t for t in sell_trades if t["profit_loss"] <= 0]
+        # 交易統計（相容當沖 DAY_TRADE 和一般 SELL）
+        closed_trades = [
+            t for t in self.trades
+            if t["action"] in ("SELL", "DAY_TRADE") and t.get("profit_loss") is not None
+        ]
+        profit_trades = [t for t in closed_trades if t["profit_loss"] > 0]
+        loss_trades = [t for t in closed_trades if t["profit_loss"] <= 0]
 
-        win_rate = len(profit_trades) / len(sell_trades) * 100 if sell_trades else 0
+        win_rate = len(profit_trades) / len(closed_trades) * 100 if closed_trades else 0
         avg_profit = np.mean([t["profit_loss"] for t in profit_trades]) if profit_trades else 0
         avg_loss = np.mean([t["profit_loss"] for t in loss_trades]) if loss_trades else 0
 
@@ -312,7 +409,7 @@ class Backtester:
             "max_drawdown": round(max_drawdown, 2),
             "sharpe_ratio": round(float(sharpe), 3),
             "win_rate": round(win_rate, 2),
-            "total_trades": len(sell_trades),
+            "total_trades": len(closed_trades),
             "profit_trades": len(profit_trades),
             "loss_trades": len(loss_trades),
             "avg_profit": round(float(avg_profit), 2),

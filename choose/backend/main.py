@@ -2,6 +2,9 @@
 股票自動選股系統 - Backend Entry Point
 整合基本面、技術面、籌碼面分析
 """
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import stocks, screener, backtest

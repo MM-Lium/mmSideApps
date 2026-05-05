@@ -128,8 +128,41 @@ export interface ScreenerResult {
   foreign_net_3d?: number;
 }
 
+// 當沖選股
+export interface DayTradeFilter {
+  min_volume_lots?: number;       // 最低成交量（張）預認 5000
+  min_amplitude?: number;         // 最低振幅 (%)預認 2.0
+  min_change_abs?: number;        // 漲跌幅絕對値下限
+  max_change_abs?: number;        // 漲跌幅絕對値上限（過濴漲停）
+  min_price?: number;             // 最低股價（過濴雞蛋水餃股）
+  require_above_ma?: boolean;     // 需股價在 MA5 且 MA20 之上
+  require_volume_surge?: boolean; // 需成交量 > 前日 2 倍
+  limit?: number;
+}
+
+export interface DayTradeCandidate {
+  stock_id: string;
+  stock_name: string;
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  change_pct: number;             // 漲跌幅 (%)
+  amplitude: number;              // 振幅 (%)
+  volume_lots: number;            // 成交量（張）
+  volume_amount: number;          // 成交金額（億元）
+  score: number;                  // 綜合評分
+  ma5?: number | null;
+  ma20?: number | null;
+  above_ma5?: boolean | null;
+  above_ma20?: boolean | null;
+  prev_volume_lots?: number | null;
+  volume_surge?: boolean | null;
+}
+
 // 回測
-export type StrategyType = 'ma_cross' | 'macd' | 'rsi' | 'chip' | 'combined';
+export type StrategyType = 'ma_cross' | 'macd' | 'rsi' | 'chip' | 'combined' | 'day_trade_gap' | 'day_trade_momentum';
 
 export interface BacktestRequest {
   stock_id: string;
@@ -144,14 +177,17 @@ export interface BacktestRequest {
   rsi_oversold?: number;
   rsi_overbought?: number;
   score_threshold?: number;
+  gap_threshold?: number;
+  volume_ratio?: number;
 }
 
 export interface TradeRecord {
   date: string;
-  action: 'BUY' | 'SELL';
+  action: 'BUY' | 'SELL' | 'DAY_TRADE';
   price: number;
   shares: number;
   amount: number;
+  sell_price?: number;
   commission: number;
   tax: number;
   profit_loss?: number;

@@ -162,6 +162,8 @@ class StrategyType(str, Enum):
     RSI = "rsi"                     # RSI策略
     CHIP = "chip"                   # 籌碼策略
     COMBINED = "combined"           # 綜合評分策略
+    DAY_TRADE_GAP = "day_trade_gap"         # 當沖：開盤缺口逆勢
+    DAY_TRADE_MOMENTUM = "day_trade_momentum"  # 當沖：強勢開盤追漲
 
 
 class BacktestRequest(BaseModel):
@@ -173,12 +175,16 @@ class BacktestRequest(BaseModel):
     commission_rate: float = Field(0.001425, ge=0)  # 手續費率 (0.1425%)
     tax_rate: float = Field(0.003, ge=0)             # 交易稅 (0.3%)
 
-    # 策略參數
+    # 策略參數（一般）
     short_ma: int = Field(5, ge=2)
     long_ma: int = Field(20, ge=5)
     rsi_oversold: float = Field(30, ge=10, le=50)
     rsi_overbought: float = Field(70, ge=50, le=90)
     score_threshold: float = Field(60, ge=0, le=100)
+
+    # 當沖專用參數
+    gap_threshold: float = Field(1.0, ge=0.1, le=10.0)   # 開盤缺口觸發閾值 (%)
+    volume_ratio: float = Field(1.5, ge=1.0, le=10.0)    # 成交量放大倍數
 
 
 class TradeRecord(BaseModel):
@@ -213,3 +219,37 @@ class BacktestResult(BaseModel):
     trades: List[TradeRecord]
     equity_curve: List[dict]      # 資產曲線 [{date, value}]
     benchmark_return: float       # 大盤報酬率 % (買入持有)
+
+
+# ---- 當沖選股 ----
+
+class DayTradeFilter(BaseModel):
+    min_volume_lots: int = Field(5000, ge=100)     # 最低成交量（張）
+    min_amplitude: float = Field(2.0, ge=0.0)      # 最低振幅 (%)
+    min_change_abs: float = Field(0.0, ge=0.0)     # 漲跌幅絕對值下限 (%)
+    max_change_abs: Optional[float] = None          # 漲跌幅絕對值上限（過濾跌停/漲停）
+    min_price: float = Field(10.0, ge=1.0)         # 最低股價（過濾雞蛋水餃股）
+    require_above_ma: bool = Field(False)           # 股價須在 MA5 且 MA20 之上
+    require_volume_surge: bool = Field(False)       # 成交量須超過前一日 2 倍
+    limit: int = Field(30, ge=1, le=100)
+
+
+class DayTradeCandidate(BaseModel):
+    stock_id: str
+    stock_name: str
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    change_pct: float             # 漲跌幅 (%)
+    amplitude: float              # 振幅 (%)
+    volume_lots: int              # 成交量（張）
+    volume_amount: float          # 成交金額（億元）
+    score: float                  # 綜合評分 0~100
+    ma5: Optional[float] = None
+    ma20: Optional[float] = None
+    above_ma5: Optional[bool] = None
+    above_ma20: Optional[bool] = None
+    prev_volume_lots: Optional[int] = None
+    volume_surge: Optional[bool] = None
